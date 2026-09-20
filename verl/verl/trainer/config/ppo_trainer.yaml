@@ -1,0 +1,492 @@
+# Format checks enforced on CI:
+# 1. Comments must appear above each field.
+# 2. There must be a blank line between each field.
+# 3. Inline comments (after a field on the same line) are not allowed.
+# 4. Indentation level is respected for nested fields.
+
+# specify the default per-component configs
+defaults:
+
+  # <folder_name>@<field_name>.<field_name>: <yaml_file_name>
+  # actor_rollout_ref.actor: trainer/config/actor/dp_actor.yaml
+  - actor@actor_rollout_ref.actor: dp_actor
+
+  # data: trainer/config/data/legacy_data.yaml
+  - data@data: legacy_data
+
+  # Reference model config.
+  # Reference model will be enabled when actor.use_kl_loss or/and algorithm.use_kl_in_reward is/are True.
+  - ref@actor_rollout_ref.ref: dp_ref
+
+  # Rollout model config.
+  - rollout@actor_rollout_ref.rollout: rollout
+
+  # Model config.
+  - model@actor_rollout_ref.model: hf_model
+
+  # Critic model config.
+  - critic@critic: dp_critic
+
+  # Reward model config.
+  - reward_model@reward_model: dp_reward_model
+
+  # Rollout correction config.
+  - algorithm@@algorithm.rollout_correction: rollout_correction
+
+  # load the reference default config, then apply the fields in the current yaml
+  # self config override anything above
+  - _self_
+
+# config for actor, rollout and reference model
+actor_rollout_ref:
+
+  # Whether it's a hybrid engine, currently only supports hybrid engine
+  hybrid_engine: true
+
+  # Timeout for operations executed against the process group
+  nccl_timeout: 600
+
+  # Rollout model config.
+  rollout:
+
+    # for huge model, layered summon can save memory (prevent OOM) but make it slower
+    layered_summon: False
+
+# Frontier-First OPD is opt-in. Every selector mode uses the same rollout,
+# retry, Teacher, and sampled-token reverse-KL training path.
+ff_opd:
+
+  # Whether Frontier-First OPD routing is enabled.
+  enable: false
+
+  # One fresh dataset epoch; retry work is drained from queues afterward.
+  base_epochs: 1
+
+  # Number of sibling Student rollouts generated for each prompt.
+  k_rollouts: 4
+
+  # Zero runs the full fresh pass. A positive value truncates the fresh pass
+  # for an explicitly requested engineering smoke test.
+  fresh_step_limit: 0
+
+  frontier_only: true
+
+  # Historical cap denominator: K=4 and 0.25 permit at most one query per
+  # prompt attempt. This is not the realized Teacher query rate; that is
+  # reported as ff/realized_query_rate.
+  legacy_teacher_query_ratio: 0.25
+
+  # Main experiments use no retry exposure. Values 1 and 2 are retry ablations.
+  max_no_success_retries: 0
+
+  # Seed for deterministic uniform fallback.
+  seed: 42
+
+  # Rank-0 per-prompt metrics file.
+  csv_path: ${trainer.default_local_dir}/../metrics/ff.csv
+
+  # Number of optimizer steps between CSV flushes.
+  csv_flush_interval: 1
+
+  # Audit sidecar holding full positive/negative confidence profiles. Full
+  # token-level curves are far too large for ff.csv.
+  profile_jsonl_path: ${trainer.default_local_dir}/../metrics/ff_profiles.jsonl
+
+  # Fraction of Frontier attempts mirrored into the audit sidecar.
+  profile_audit_sample_rate: 0.02
+
+  # Diagnostic sidecar: per-token reverse-KL profiles (masked token log-ratios
+  # r_t = logp_student - logp_teacher) for every Teacher-queried sample. Off by
+  # default; enable for short diagnostic runs that need signal-position data.
+  log_kl_profiles: false
+  kl_profile_jsonl_path: ${trainer.default_local_dir}/../metrics/ff_kl_profiles.jsonl
+
+  # Cost-aware selector (FF-Cost): the sibling objective is
+  #   J_j = (d_j + eps) * c_j^alpha
+  # with d_j the raw nearest-positive distance and c_j the raw Teacher cost
+  # (prompt + response tokens). alpha is fixed at 0.5 by the recipe.
+  # selector_cost_aware is the single-variable ablation switch.
+  selector_cost_aware: true
+
+  # Weight on the Teacher cost term in FF-Cost (fixed at 0.5).
+  selector_cost_alpha: 0.5
+
+  # Numerical floor on the distance term in FF-Cost.
+  selector_score_eps: 1.0e-8
+
+  # Whether FF-OPD runtime invariants are checked.
+  debug_assertions: true
+
+  # Whether cumulative query accounting is included in checkpoints.
+  save_queue_state: true
+
+# Ordinary TLR routes one rollout per prompt by the paper teacher-free score
+# S=(1-Lhat)*(1-Hhat) — shortest + lowest mean Student token entropy wins —
+# before any Teacher forward, without verifier labels.
+tlr_opd:
+
+  enabled: false
+
+  rollouts_per_prompt: 4
+
+  save_csv: true
+
+  csv_path: ${trainer.default_local_dir}/../metrics/tlr_selection_records.csv
+
+  seed: 42
+
+  # Trajectory floor applied BEFORE ScoreLH normalization: rollouts shorter
+  # than this many valid tokens are excluded per prompt group, so immediate-
+  # EOS degenerates cannot corrupt the min/max normalizers. A prompt whose
+  # group is entirely below the floor is skipped (no Teacher query).
+  # 0 disables the floor (failure-mode ablation only). Not a paper formula;
+  # see tlr_opd.py.
+  min_rollout_tokens: 16
+
+# custom reward function definition
+custom_reward_function:
+
+  # The path to the file containing your customized reward function.
+  # If not specified, pre-implemented reward functions will be used.
+  path: null
+
+  # The name of the reward function within the specified file. Default is 'compute_score'.
+  name: compute_score
+
+# config for the algorithm
+algorithm:
+
+  # Required when using verl.utils.omega_conf_to_dataclass to instantiate dataclass configs
+  _target_: verl.trainer.config.AlgoConfig
+
+  # FF-OPD rollout selector. Boundary modes change only which incorrect
+  # Frontier sibling is queried by the Teacher.
+  ff_selector_mode: boundary_opd
+
+  # Boundary-Contrast OPD hidden capture settings.
+  boundary_opd:
+
+    # Required when using verl.utils.omega_conf_to_dataclass to instantiate dataclass configs
+    _target_: verl.trainer.config.BoundaryOPDConfig
+
+    # Number of equal response-horizon boundaries.
+    num_boundaries: 16
+
+    # Final hidden layer after the model's final norm.
+    hidden_layer: -1
+
+    # Capture the tensor immediately before the LM head.
+    capture_location: pre_lm_head
+
+    # Prefer a final-norm hook and fall back to an LM-head pre-hook.
+    capture_method: auto
+
+    # Storage and Ray communication dtype for sparse boundary states.
+    hidden_storage_dtype: float16
+
+    # Cosine distance and accumulation always use FP32.
+    distance_compute_dtype: float32
+
+    # Epsilon used to normalize hidden transitions.
+    hidden_norm_epsilon: 1.0e-6
+
+    # Geometry used for boundary-transition comparison.
+    similarity_metric: raw_hidden_cosine
+
+    # Frozen hidden-transition calibration and metric-specific numerics.
+    calibration_artifact_path: ""
+    calibration_artifact_sha256: ""
+    calibration_model_hash: ""
+    calibration_data_hash: ""
+    calibration_collect: false
+    calibration_num_prompts: 64
+    whitening_regularization: 1.0e-4
+    lm_head_vocab_chunk_size: 2048
+    sinkhorn_epsilon: 0.05
+    sinkhorn_max_iterations: 2000
+    sinkhorn_tolerance: 1.0e-5
+    dtw_gap_penalty: 0.0
+
+    score_mode: legacy
+    window_ratio: 0.125
+
+    # Hidden routing must remain outside the Actor gradient graph.
+    detach_hidden: true
+
+    # Boundary-Contrast never falls back to FF-Cost.
+    fallback_to_ff_cost: false
+
+    # Pairwise tensors are released unless explicitly requested for debugging.
+    debug_store_pairwise: false
+    representation_dynamics_m64: false
+    sm_pda_compute_original_pda_diagnostics: true
+
+  # Discount factor for future rewards
+  gamma: 1.0
+
+  # Trade-off between bias and variance in the GAE estimator
+  lam: 1.0
+
+  # Advantage estimator type: "gae", "grpo", "reinforce_plus_plus", etc.
+  adv_estimator: gae
+
+  # Whether to normalize advantages by std (specific to GRPO)
+  norm_adv_by_std_in_grpo: True
+
+  # Weight for GRPO outcome advantage in hybrid estimator
+  grpo_outcome_weight: 1.0
+
+  # Whether to enable in-reward KL penalty
+  use_kl_in_reward: False
+
+  # How to estimate KL divergence: "kl", "abs", "mse", "low_var_kl", or "full"
+  kl_penalty: kl
+
+  # KL control configuration
+  kl_ctrl:
+
+    # Required when using verl.utils.omega_conf_to_dataclass to instantiate dataclass configs
+    _target_: verl.trainer.config.KLControlConfig
+
+    # KL control type: "fixed" or "adaptive"
+    type: fixed
+
+    # Initial coefficient for KL penalty
+    kl_coef: 0.001
+
+    # Horizon value for adaptive controller (if enabled)
+    horizon: 10000
+
+    # Target KL divergence (used for adaptive controller)
+    target_kl: 0.1
+
+  # Whether to enable preference feedback PPO
+  use_pf_ppo: False
+
+  # Preference feedback PPO settings
+  pf_ppo:
+
+    # Method for reweighting samples: "pow", "max_min", or "max_random"
+    reweight_method: pow
+
+    # Power used for weight scaling in "pow" method
+    weight_pow: 2.0
+
+# config for the trainer
+trainer:
+
+  # Whether to balance batch sizes across distributed workers
+  balance_batch: True
+
+  # Shared training and FF selector seed.
+  seed: 42
+
+  # Number of epochs in training
+  total_epochs: 30
+
+  # Total training steps (can be set explicitly or derived from epochs)
+  total_training_steps: null
+
+  # Project name for experiment tracking (e.g., wandb)
+  project_name: verl_examples
+
+  # Experiment name for run identification in tracking tools
+  experiment_name: gsm8k
+
+  # Logging backends to use: "console", "wandb", etc.
+  logger: ["console", "wandb"]
+
+  # Number of generations to log during validation
+  log_val_generations: 0
+  is_plot: False
+
+  # Directory for logging rollout data; no dump if null
+  rollout_data_dir: null
+
+  # Detached per-rollout sampled-token logit-gradient concentration diagnostics.
+  rollout_gradient_diagnostics:
+
+    # Enable diagnostics without changing the Full OPD objective.
+    enable: false
+
+    # Write one lightweight JSONL record per rollout from the central trainer.
+    save_per_rollout: false
+
+    # Output directory used when save_per_rollout is enabled.
+    save_dir: null
+
+    # Numerical threshold for zero-mass groups and safe divisions.
+    eps: 1.0e-8
+
+  # Directory for logging validation data; no dump if null
+  validation_data_dir: null
+
+  # Number of nodes used in the training
+  nnodes: 1
+
+  # Number of GPUs per node
+  n_gpus_per_node: 8
+
+  # Save frequency (by iteration) for model checkpoints
+  save_freq: -1
+
+  # ESI refers to the elastic server instance used during training, similar to the training plan. For example,
+  # if you purchase 10 hours of computing power, the ESI will automatically shut down after 10 hours of training.
+  # To ensure a checkpoint is saved before ESI shuts down, the system will start saving a checkpoint in advance.
+  # The advance time is calculated as: Advance Time = Longest historical step duration + Checkpoint save duration + esi_redundant_time.
+  # Here, esi_redundant_time is a user-defined value that further extends the advance time for added safety.
+  esi_redundant_time: 0
+
+  # Resume mode: "auto", "disable", or "resume_path"
+  # "auto": resume from last checkpoint if available
+  # "disable": start from scratch
+  # "resume_path": resume from a user-defined path
+  resume_mode: auto
+
+  # Path to resume training from (only used when resume_mode is "resume_path")
+  resume_from_path: null
+
+  # Whether to run validation before training begins
+  val_before_train: True
+
+  # Whether to run validation only
+  val_only: False
+
+  # Validation frequency (in training iterations)
+  test_freq: -1
+
+  # Number of iterations to warm up the critic before updating policy
+  critic_warmup: 0
+
+  # Default path to distributed filesystem for saving checkpoints
+  default_hdfs_dir: null
+
+  # Whether to delete local checkpoints after loading
+  del_local_ckpt_after_load: False
+
+  # Default local directory for saving checkpoints
+  default_local_dir: checkpoints/${trainer.project_name}/${trainer.experiment_name}
+
+  # Maximum number of actor checkpoints to keep
+  max_actor_ckpt_to_keep: null
+
+  # Maximum number of critic checkpoints to keep
+  max_critic_ckpt_to_keep: null
+
+  # Timeout (in seconds) for Ray worker to wait for registration
+  ray_wait_register_center_timeout: 300
+
+  # Device to run training on (e.g., "cuda", "cpu")
+  device: cuda
+
+  # whether to use legacy worker implementation
+  #  mode: "auto", "enable", or "disable"
+  use_legacy_worker_impl: auto
+
+# profiler configs
+global_profiler:
+
+  # Required when using verl.utils.omega_conf_to_dataclass to instantiate dataclass configs
+  _target_: verl.utils.profiler.ProfilerConfig
+
+  # Profiling tool: choose between nsys, npu, torch, torch_memory
+  tool: null
+
+  # profile steps
+  steps: null
+
+  # Whether to combine continuous steps into one database.
+  ## If True, worker.profiler.discrete must be False, [1,2] in one, [5] in another.
+  ## If False, [1] in one, [2] in another, [5] in another.
+  profile_continuous_steps: False
+
+  # Path to save profiling contents
+  save_path: "outputs/profile"
+
+  # Specific tool configs, can use +profiler.tool_config.[tool].xxx to config
+  global_tool_config:
+
+    # nsys config
+    nsys:
+
+      # Required when using verl.utils.omega_conf_to_dataclass to instantiate dataclass configs
+      _target_: verl.utils.profiler.config.NsightToolConfig
+
+      # True for each task has its own database, False for all tasks in one training step share one database.
+      discrete: False
+
+      # controller Nvidia Nsight Systems Options. Must set when profile_steps is not None.
+      ## reference https://docs.nvidia.com/nsight-systems/UserGuide/index.html
+      ## reference https://docs.ray.io/en/latest/ray-observability/user-guides/profiling.html
+      controller_nsight_options:
+
+        # Select the API(s) to be traced.
+        trace: "cuda,nvtx,cublas,ucx"
+
+        # Track the GPU memory usage by CUDA kernels. Must be string type "true" or "false".
+        cuda-memory-usage: "true"
+
+        # CUDA graphs will be traced as a whole
+        cuda-graph-trace: "graph"
+
+      # worker Nvidia Nsight Systems Options. Must set when profile_steps is not None.
+      worker_nsight_options:
+
+        # Select the API(s) to be traced.
+        trace: "cuda,nvtx,cublas,ucx"
+
+        # Track the GPU memory usage by CUDA kernels. Must be string type "true" or "false".
+        cuda-memory-usage: "true"
+
+        # CUDA graphs will be traced as a whole
+        cuda-graph-trace: "graph"
+
+        # Profiling only in a range of torch.cuda.profiler.start and stop. Do not change this config.
+        capture-range: "cudaProfilerApi"
+
+        # Specify the desired behavior when a capture range ends.
+        # In verl we need the torch.cuda.profiler.start/stop pair to repeats n times.
+        # valid values are "repeat-shutdown:n" or null.
+        # For normal whole step profiling, n = len(profile_steps);
+        # but for discrete profiling, n = len(profile_steps) * Number(subtasks).
+        # Or you can just leave it null and the program will use n = len(profile_steps) * 6;
+        capture-range-end: null
+
+        # Send signal to the target application's process group. We let the program to exit by itself.
+        kill: none
+
+    # enable memory visualization for debugging memory usage
+    torch_memory:
+
+      #  Maximum number of allocation entries to record
+      trace_alloc_max_entries: 100_000
+
+      # The depth of the call stack to capture for each allocation
+      stack_depth: 32
+
+      # 'alloc': records only allocation events || 'state': records memory state changes || 'all': records both.
+      context: "all"
+
+      # 'python': records Python stacks || 'cpp': records C++ stacks (available in some versions) || 'all': records both.
+      stacks: "all"
+
+      # devices, record_context etc.
+      kw_args: {}
+
+# configs for TransferQueue
+transfer_queue:
+
+  # Whether to enable transfer queue
+  enable: False
+
+# configs related to ray
+ray_kwargs:
+
+  # configs related to ray initialization
+  ray_init:
+
+    # Number of CPUs for Ray. Use a fixed number instead of null when using SLURM.
+    num_cpus: null
+
+  # Path to save Ray timeline JSON for performance profiling
+  timeline_json_file: null

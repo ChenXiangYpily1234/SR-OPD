@@ -1,0 +1,34 @@
+# Run outputs: checkpoints, metrics, logs, merged models, graded results
+/runs/
+/calibration/runs/
+/calibration/artifacts/
+
+# (datasets/ ships with the repository — see README §Preparation §2)
+
+# Evaluation scratch
+eval_outputs/
+eval_summary.txt
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.eggs/
+.pytest_cache/
+
+# Python wheels and editor/OS noise
+*.whl
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Machine-local model paths
+bash/models.env
+swanlog/
+wandb/
+
+# Hydra/PyTorch scratch written by test runs inside the vendored fork
+verl/outputs/
+verl/tmp/
