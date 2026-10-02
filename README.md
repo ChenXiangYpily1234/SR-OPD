@@ -1,6 +1,6 @@
 # SR-OPD: Success-Referenced On-Policy Distillation
 
-This repository contains the implementation of **SR-OPD**, introduced in *SR-OPD: Success-Referenced Pre-Query Rollout Routing for On-Policy Distillation*.
+This repository contains the implementation of **SR-OPD**, introduced in *Spend Teacher Tokens Where They Matter: Success-Referenced On-Policy Distillation*.
 
 SR-OPD selects failed Student rollouts for Teacher supervision using successful same-prompt siblings as references. It ranks candidates by the magnitude and persistence of hidden-state departure, adjusted for Teacher input cost. Each mixed-outcome prompt receives one Teacher query. Routing reuses the Student log-probability forward and preserves the sampled-token OPD objective.
 
@@ -81,12 +81,14 @@ Evaluation reports Avg@16 and Pass@16 on AIME24, AIME25, AMC23, HMMT24, HMMT25, 
 
 ## Citation
 
+**Authors:** Xiang Chen, Futao Su, Kong Wang, Jiayi Chen, Tanlin Li, and Ziyu Su.
+
 ```bibtex
-@misc{sropd2027,
-  title  = {SR-OPD: Success-Referenced Pre-Query Rollout Routing for On-Policy Distillation},
-  author = {Anonymous Authors},
-  year   = {2027},
-  note   = {Manuscript under review}
+@misc{chen2026sropd,
+  title  = {Spend Teacher Tokens Where They Matter: Success-Referenced On-Policy Distillation},
+  author = {Chen, Xiang and Su, Futao and Wang, Kong and Chen, Jiayi and Li, Tanlin and Su, Ziyu},
+  year   = {2026},
+  url    = {https://github.com/ChenXiangYpily1234/SR-OPD}
 }
 ```
 
