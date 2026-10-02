@@ -6,6 +6,14 @@ SR-OPD selects failed Student rollouts for Teacher supervision using successful 
 
 The implementation is built on [verl](https://github.com/volcengine/verl). The paper studies Qwen3-4B → Qwen3-1.7B, Skywork-OR1-Math-7B → DeepSeek-R1-Distill-Qwen-1.5B, and Granite-3.3-8B-Instruct → Granite-3.3-2B-Instruct.
 
+## Method overview
+
+![Figure 1: SR-OPD prompt routing and success-referenced rollout selection](assets/sr-opd-figure1.png)
+
+**Figure 1.** SR-OPD first retains prompts with both successful and failed student rollouts. A successful rollout from the same prompt then serves as a student-side reference to rank failed rollouts by persistent-departure area (PDA) and teacher-input cost. Only the selected failed rollout receives teacher supervision.
+
+[View the original vector figure (PDF)](assets/sr-opd-figure1.pdf).
+
 ## Repository layout
 
 - `verl/`: modified verl training framework and routing implementation.
