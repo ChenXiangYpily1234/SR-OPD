@@ -83,11 +83,14 @@ Evaluation reports Avg@16 and Pass@16 on AIME24, AIME25, AMC23, HMMT24, HMMT25, 
 
 **Authors:** Xiang Chen, Futao Su, Kong Wang, Jiayi Chen, Tanlin Li, and Ziyu Su.
 
+Xiang Chen and Futao Su contributed equally as co-first authors; Xiang Chen is listed first. Tanlin Li is the corresponding author.
+
 ```bibtex
 @misc{chen2026sropd,
   title  = {Spend Teacher Tokens Where They Matter: Success-Referenced On-Policy Distillation},
   author = {Chen, Xiang and Su, Futao and Wang, Kong and Chen, Jiayi and Li, Tanlin and Su, Ziyu},
   year   = {2026},
+  note   = {Xiang Chen and Futao Su contributed equally; Tanlin Li is the corresponding author},
   url    = {https://github.com/ChenXiangYpily1234/SR-OPD}
 }
 ```
